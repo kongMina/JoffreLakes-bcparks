@@ -19,7 +19,7 @@
 # help message in case of something
 help()
 {
-	echo "Usage: JoffreLakes.sh [ -d | --day ] [ -s | --secondday ] [ -p | --park ] [ -h | --help ]
+	echo "Usage: JoffreLakes.sh [ -d | --day ] [ -s | --secondday ] [ -p | --park ] [ -t | --time ] [ -h | --help ]
 
 			-d | --day:
 				by default is 2 days ahead ($(date_plus_days 2))
@@ -30,6 +30,12 @@ help()
 				by default empty
 				second day when you are okay to get tickets
 				expecting YYYY-MM-DD format
+
+			-t | --time:
+				by default empty (beep for either slot opening up)
+				only applies to parks with separate AM/PM passes (Golden-South, Golden-Gold)
+				AM - only beep when the morning slot opens up
+				PM - only beep when the afternoon slot opens up
 
 			-p | --park:
 				by defaul Joffre - since it's the only park where you need ticket per person, not per car
@@ -144,6 +150,18 @@ do
 			PARK="${1#-p}"
 			shift
 			;;
+		--time=*)
+			TIME_FILTER="${1#--time=}"
+			shift
+			;;
+		--time)
+			TIME_FILTER="$2"
+			shift 2
+			;;
+		-t*)
+			TIME_FILTER="${1#-t}"
+			shift
+			;;
 		-h | --help)
 			help
 			;;
@@ -153,6 +171,12 @@ do
 			;;
 	esac
 done
+
+if [ -n "$TIME_FILTER" ] && [ "$TIME_FILTER" != "AM" ] && [ "$TIME_FILTER" != "PM" ]
+then
+	echo "Expected -t/--time to be AM or PM (${TIME_FILTER})"
+	exit 1
+fi
 
 ############### DATE #############
 ## checking and confirming date value
@@ -254,14 +278,25 @@ esac
 ############### MATCH #############
 ## checking whether the last log line shows a "Low" (just-opened) capacity for a given date
 ## DAY-slot parks (Joffre, Diamond Head, Rubble Creek, Boat Launch): single all-day slot
-## AMPM-slot parks (South Beach, Gold Creek): separate AM/PM slots - beep if either opens up
+## AMPM-slot parks (South Beach, Gold Creek): separate AM/PM slots
+##   - TIME_FILTER=AM/PM restricts to just that slot; unset beeps if either opens up
 check_low()
 {
 	local check_date=$1
 	local line=$(tail -1 $LOG)
 
 	if [ "$SLOT_TYPE" = "AMPM" ]; then
-		echo "$line" | grep -E "\"${check_date}\":\{\"AM\":\{\"capacity\":\"Low\"|\"${check_date}\":\{\"AM\":\{[^}]*\},\"PM\":\{\"capacity\":\"Low\"" > /dev/null
+		case "$TIME_FILTER" in
+			AM)
+				echo "$line" | grep -E "\"${check_date}\":\{\"AM\":\{\"capacity\":\"Low\"" > /dev/null
+				;;
+			PM)
+				echo "$line" | grep -E "\"${check_date}\":\{\"AM\":\{[^}]*\},\"PM\":\{\"capacity\":\"Low\"" > /dev/null
+				;;
+			*)
+				echo "$line" | grep -E "\"${check_date}\":\{\"AM\":\{\"capacity\":\"Low\"|\"${check_date}\":\{\"AM\":\{[^}]*\},\"PM\":\{\"capacity\":\"Low\"" > /dev/null
+				;;
+		esac
 	else
 		echo "$line" | grep "\"${check_date}\":{\"DAY\":{\"capacity\":\"Low\"" > /dev/null
 	fi
@@ -269,7 +304,7 @@ check_low()
 
 ############### MAIN #############
 
-LOG=log.txt
+LOG=${LOG:-log.txt}
 
 echo "CHECKING PASSES FOR:
 		DATE(S): ${DATE} ${DATE2}
