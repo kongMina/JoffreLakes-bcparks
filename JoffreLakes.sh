@@ -22,7 +22,7 @@ help()
 	echo "Usage: JoffreLakes.sh [ -d | --day ] [ -s | --secondday ] [ -p | --park ] [ -h | --help ]
 
 			-d | --day:
-				by default is 2 days ahead ($(date -d "+2 days" +%F))
+				by default is 2 days ahead ($(date_plus_days 2))
 				day when you are looking for tickets
 				expecting YYYY-MM-DD format
 
@@ -40,8 +40,8 @@ help()
 				3) Garibaldi-Rubble - for Rubble Creek in Garibaldi Provincial Park
 				4) Garibaldi-Cheakamus - not supported yet, due to morning and evening options
 				5) Golden-Boat - for Alouette Lake Boat Launch Parking in Golden Ears Provincial Park
-				6) Golden-South - not supported, due to morning and evening options
-				7) Golden-Gold - not supported, due to morning and evening options
+				6) Golden-South - for Alouette Lake South Beach Day-Use Parking Lot in Golden Ears Provincial Park
+				7) Golden-Gold - for Gold Creek Parking Lot in Golden Ears Provincial Park
 				8) Golden-West - not supported, due to morning and evening options
 
 			-h | --help:
@@ -54,35 +54,98 @@ help()
 	exit 2
 }
 
+############### PLATFORM #############
+# macOS ships BSD date (no -d) and plain BSD getopt (no long options), and has
+# no 'beep' command at all. Detect what's actually here once, up front.
+if date -v+1d >/dev/null 2>&1
+then
+	IS_BSD_DATE=1
+else
+	IS_BSD_DATE=0
+fi
+
+# $1 = number of days from today, formatted YYYY-MM-DD
+date_plus_days()
+{
+	if [ "$IS_BSD_DATE" = "1" ]
+	then
+		date -v+"$1"d +%F
+	else
+		date -d "+$1 days" +%F
+	fi
+}
+
+# $1 = date string in YYYY-MM-DD to validate
+date_is_valid()
+{
+	if [ "$IS_BSD_DATE" = "1" ]
+	then
+		date -j -f "%Y-%m-%d" "$1" >/dev/null
+	else
+		date -d "$1" >/dev/null
+	fi
+}
+
+# only shim 'beep' if there's no real one already on the PATH (checked before
+# we define our own function below, so this can't just find itself)
+if ! command -v beep >/dev/null 2>&1
+then
+	beep()
+	{
+		if command -v osascript >/dev/null 2>&1
+		then
+			osascript -e 'beep 2' >/dev/null 2>&1
+		elif command -v afplay >/dev/null 2>&1
+		then
+			afplay /System/Library/Sounds/Glass.aiff >/dev/null 2>&1
+		fi
+	}
+fi
+
 ############### ARGS #############
 # getting and checking parameters
-SHORT=d::,s::,p::,h
-LONG=day::,secondday::,park::,help
-OPTS=$(getopt -a -n JoffreLakes.sh --options $SHORT --longoptions $LONG -- "$@")
-
-eval set -- "$OPTS"
-
-while :
+# (parsed manually - macOS/BSD getopt has no GNU long-option support)
+while [ $# -gt 0 ]
 do
 	case "$1" in
-		-d | --day )
+		--day=*)
+			DATE="${1#--day=}"
+			shift
+			;;
+		--day)
 			DATE="$2"
 			shift 2
 			;;
-		-s | --secondday )
+		-d*)
+			DATE="${1#-d}"
+			shift
+			;;
+		--secondday=*)
+			DATE2="${1#--secondday=}"
+			shift
+			;;
+		--secondday)
 			DATE2="$2"
 			shift 2
 			;;
-		-p | --park )
+		-s*)
+			DATE2="${1#-s}"
+			shift
+			;;
+		--park=*)
+			PARK="${1#--park=}"
+			shift
+			;;
+		--park)
 			PARK="$2"
 			shift 2
 			;;
+		-p*)
+			PARK="${1#-p}"
+			shift
+			;;
 		-h | --help)
 			help
-			;;
-		--)
-			shift;
-			break
 			;;
 		*)
 			echo "Unexpected option: $1"
@@ -96,12 +159,12 @@ done
 if [ -z "$DATE" ]
 then
 	#by default 2 days ahead
-	DATE=$(date -d "+2 days" +%F)
+	DATE=$(date_plus_days 2)
 elif ! [[ "$DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
 then
 	echo "Expected date in YYYY-MM-DD format (${DATE})"
 	exit 1
-elif ! date -d "$DATE" >/dev/null
+elif ! date_is_valid "$DATE"
 then
 	echo "Incorrect date specified: $DATE"
 	exit 1
@@ -115,7 +178,7 @@ elif ! [[ "$DATE2" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
 then
 	echo "Expected date in YYYY-MM-DD format (${DATE2})"
 	exit 1
-elif ! date -d "$DATE2" >/dev/null
+elif ! date_is_valid "$DATE2"
 then
 	echo "Incorrect date specified: $DATE2"
 	exit 1
@@ -125,7 +188,7 @@ fi
 ## checking and confirming park value
 ## got them based on API request here: https://reserve.bcparks.ca/dayuse/
 HEADERS="-H 'sec-ch-ua: \"Google Chrome\";v=\"117\", \"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"117\"'   -H 'Accept: application/json, text/plain, */*'   -H 'Referer: https://reserve.bcparks.ca/'   -H 'sec-ch-ua-mobile: ?0'   -H 'User-Agent: Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36'   -H 'sec-ch-ua-platform: \"Chrome OS\"'   --compressed"
-URL_BASE="https://jd7n1axqh0.execute-api.ca-central-1.amazonaws.com/api/reservation?"
+URL_BASE="https://reserve.bcparks.ca/api/reservation?"
 
 case "$PARK" in
 	"" | 1 | "Joffre" ) 
@@ -164,16 +227,14 @@ case "$PARK" in
 		PARK_NAME="Golden Ears Provincial Park - Alouette Lake South Beach Day-Use Parking Lot - Parking "
 		URL="${URL_BASE}facility=Alouette%20Lake%20South%20Beach%20Day-Use%20Parking%20Lot&park=0008"
 		Response='{"2023-08-10":{"AM":{"capacity":"High","max":1},"PM":{"capacity":"Moderate","max":1}},"2023-08-11":{"AM":{"capacity":"High","max":1},"PM":{"capacity":"Moderate","max":1}},"2023-08-12":{"AM":{"capacity":"Low","max":1},"PM":{"capacity":"Full","max":0}}}'
-		echo "Sorry, ${PARK_NAME} is not supported yet."
-		exit 2
+		SLOT_TYPE="AMPM"
 		;;
 
 	7 | "Golden-Gold" )
 		PARK_NAME="Golden Ears Provincial Park - Gold Creek Parking Lot - Parking "
 		URL="${URL_BASE}facility=Gold%20Creek%20Parking%20Lot&park=0008"
 		Response='{"2023-08-10":{"AM":{"capacity":"Moderate","max":1},"PM":{"capacity":"Full","max":0}},"2023-08-11":{"AM":{"capacity":"Low","max":1},"PM":{"capacity":"Full","max":0}},"2023-08-12":{"AM":{"capacity":"Full","max":0},"PM":{"capacity":"Full","max":0}}}'
-		echo "Sorry, ${PARK_NAME} is not supported yet."
-		exit 2
+		SLOT_TYPE="AMPM"
 		;;
 
 	8 | "Golden-West" )
@@ -189,6 +250,22 @@ case "$PARK" in
 		exit 2
 		;;
 esac
+
+############### MATCH #############
+## checking whether the last log line shows a "Low" (just-opened) capacity for a given date
+## DAY-slot parks (Joffre, Diamond Head, Rubble Creek, Boat Launch): single all-day slot
+## AMPM-slot parks (South Beach, Gold Creek): separate AM/PM slots - beep if either opens up
+check_low()
+{
+	local check_date=$1
+	local line=$(tail -1 $LOG)
+
+	if [ "$SLOT_TYPE" = "AMPM" ]; then
+		echo "$line" | grep -E "\"${check_date}\":\{\"AM\":\{\"capacity\":\"Low\"|\"${check_date}\":\{\"AM\":\{[^}]*\},\"PM\":\{\"capacity\":\"Low\"" > /dev/null
+	else
+		echo "$line" | grep "\"${check_date}\":{\"DAY\":{\"capacity\":\"Low\"" > /dev/null
+	fi
+}
 
 ############### MAIN #############
 
@@ -211,8 +288,8 @@ while true; do
 	echo -n ",${PARK_NAME}," | tee -a $LOG
 	date | tee -a $LOG
 	
-	(tail -1 $LOG | grep "\"${DATE}\":{\"DAY\":{\"capacity\":\"Low\"") && echo "Found passes for $DATE !!!" && beep
-	[ ! -z "$DATE2" ] && (tail -1 $LOG | grep "\"${DATE2}\":{\"DAY\":{\"capacity\":\"Low\"") && echo "Found passes for $DATE2 !!!" && beep
+	check_low "$DATE" && echo "Found passes for $DATE !!!" && beep
+	[ ! -z "$DATE2" ] && check_low "$DATE2" && echo "Found passes for $DATE2 !!!" && beep
 	
 	sleep 5
 done

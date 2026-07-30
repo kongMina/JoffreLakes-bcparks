@@ -55,8 +55,8 @@ Usage: JoffreLakes.sh [ -d | --day ] [ -s | --secondday ] [ -p | --park ] [ -h |
                                 3) Garibaldi-Rubble - for Rubble Creek in Garibaldi Provincial Park
                                 4) Garibaldi-Cheakamus - not supported yet, due to morning and evening options
                                 5) Golden-Boat - for Alouette Lake Boat Launch Parking in Golden Ears Provincial Park
-                                6) Golden-South - not supported, due to morning and evening options
-                                7) Golden-Gold - not supported, due to morning and evening options
+                                6) Golden-South - for Alouette Lake South Beach Day-Use Parking Lot in Golden Ears Provincial Park
+                                7) Golden-Gold - for Gold Creek Parking Lot in Golden Ears Provincial Park
                                 8) Golden-West - not supported, due to morning and evening options
 
                         -h | --help:
